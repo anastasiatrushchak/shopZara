@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 from rest_framework import filters
+from rest_framework.pagination import PageNumberPagination  # ДОДАНО: імпорт для пагінації
 from product import serializers
 from rest_framework.decorators import action
 from django.db import transaction
@@ -15,6 +16,14 @@ from drf_spectacular.utils import (
     OpenApiTypes,
 )
 from core.models import Product, Category, Cart, CartItem, Order, OrderItem
+
+
+# ДОДАНО: Клас пагінації для продуктів (по 10 на сторінку)
+class ProductPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 @extend_schema_view(
     list=extend_schema(
@@ -43,7 +52,10 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
     queryset = Product.objects.all()
     serializer_class = serializers.DetailProductSerializer
     filter_backends = (filters.SearchFilter,)
-    search_fields = ['name'] 
+    search_fields = ['name']
+
+    # ДОДАНО: Підключення класу пагінації
+    pagination_class = ProductPagination
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -61,7 +73,7 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
 
         # Отримання поля сортування і порядку (asc/desc) з параметрів запиту
         sort_field = self.request.query_params.get('sort_field', 'name')  # Поле за замовчуванням - 'name'
-        sort_order = self.request.query_params.get('sort_order', 'asc')   # За замовчуванням - за зростанням
+        sort_order = self.request.query_params.get('sort_order', 'asc')  # За замовчуванням - за зростанням
 
         # Формування порядку сортування
         if sort_order == 'desc':
@@ -76,8 +88,9 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
             category = Category.objects.get(name=category_name)
             return self.queryset.filter(category=category).order_by(sort_field).distinct()
         except Category.DoesNotExist:
-        # Якщо категорії не існує, повертаємо порожній queryset
+            # Якщо категорії не існує, повертаємо порожній queryset
             return self.queryset.none()
+
     @extend_schema(
         request=serializers.ReviewSerializer,
         responses={201: serializers.ReviewSerializer},
@@ -86,22 +99,22 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
     def add_feedback(self, request, pk=None):
         """Add feedback to product"""
         product = self.get_object()
-        
+
         # Додаємо product_id до даних запиту
         data = request.data.copy()
         data['product'] = product.id
-        
+
         serializer = serializers.ReviewSerializer(data=data)  # Явно вказуємо ReviewSerializer
-        
+
         if serializer.is_valid():
             review = serializer.save(user=self.request.user)
             return Response(
-                serializers.ReviewSerializer(review).data,  
+                serializers.ReviewSerializer(review).data,
                 status=status.HTTP_201_CREATED
             )
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @extend_schema(
         request=serializers.CartItemSerializer,
         responses={201: serializers.CartItemSerializer},
@@ -111,7 +124,7 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
         """Add product to cart or update quantity if product already exists"""
         product = self.get_object()
         data = request.data.copy()
-        
+
         # Check quantity requested is a positive integer
         quantity_requested = data.get('quantity', 0)
         if quantity_requested <= 0:
@@ -125,7 +138,7 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
         with transaction.atomic():
             # Get or create cart for the user
             cart, _ = Cart.objects.get_or_create(user=self.request.user)
-            
+
             # Try to get existing cart item
             cart_item, created = CartItem.objects.get_or_create(
                 cart=cart,
@@ -134,12 +147,12 @@ class ProductView(viewsets.ReadOnlyModelViewSet):
                     'quantity': quantity_requested
                 }
             )
-            
+
             if not created:
                 # If cart item exists, update the quantity
                 cart_item.quantity += quantity_requested
                 cart_item.save()
-            
+
             # Decrease the product quantity
             product.quantity -= quantity_requested
             product.save()
@@ -161,13 +174,13 @@ class CartView(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     def get_queryset(self):
         return self.queryset.filter(user=self.request.user)
-    
+
     @action(detail=True, methods=['delete'], url_path='delete-item')
     def delete_item(self, request, pk=None):
         try:
             # Знайдемо елемент CartItem для поточного користувача
             cart_item = CartItem.objects.get(pk=pk, cart__user=self.request.user)
-            cart_item.product.quantity+=cart_item.quantity
+            cart_item.product.quantity += cart_item.quantity
             cart_item.product.save()
             cart_item.delete()
             return Response({"detail": "Item deleted from cart."}, status=status.HTTP_204_NO_CONTENT)
@@ -184,7 +197,7 @@ class CartView(mixins.ListModelMixin, viewsets.GenericViewSet):
             # Знаходимо CartItem для поточного користувача
             cart_item = CartItem.objects.get(pk=pk, cart__user=self.request.user)
             product = cart_item.product  # Отримуємо об'єкт продукту, пов'язаний з CartItem
-            
+
             # Отримуємо значення для зміни кількості
             change = request.data.get('change', 0)
             try:
@@ -221,7 +234,7 @@ class CartView(mixins.ListModelMixin, viewsets.GenericViewSet):
                             status=status.HTTP_200_OK)
         except CartItem.DoesNotExist:
             return Response({"detail": "Item not found in cart."}, status=status.HTTP_404_NOT_FOUND)
-        
+
     @action(detail=False, methods=['delete'], url_path='clear-cart')
     def clear_cart(self, request):
         try:
@@ -243,42 +256,41 @@ class CartView(mixins.ListModelMixin, viewsets.GenericViewSet):
         except Cart.DoesNotExist:
             return Response({"detail": "Cart not found."},
                             status=status.HTTP_404_NOT_FOUND)
-        
+
     @action(detail=False, methods=['post'], url_path='place-order')
     def place_order(self, request):
         try:
             # Отримуємо кошик користувача
             cart = Cart.objects.get(user=self.request.user)
             cart_items = cart.items.all()
-            
+
             if not cart_items.exists():
                 return Response({"detail": "Your cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
-            
+
             # Розраховуємо загальну суму
-            items_price=[]
-            total_price=0
+            items_price = []
+            total_price = 0
             for item in cart_items:
                 if item.product.discount > 0:
                     if item.product.discount_type == 'percentage':
                         price = item.product.price * (1 - item.product.discount / 100)
                     else:
                         price = item.product.price - item.product.discount
-                else:   
+                else:
                     price = item.product.price
                 items_price.append(price)
                 total_price = total_price + (price * item.quantity)
-            
-            
+
             # Створюємо замовлення
             order = Order.objects.create(
                 user=self.request.user,
                 total_price=total_price,
                 status='pending'
             )
-            
+
             # Створюємо елементи замовлення
             order_items = []
-            for i in range (cart_items.count()):
+            for i in range(cart_items.count()):
                 order_item = OrderItem(
                     order=order,
                     product=cart_items[i].product,
@@ -287,17 +299,17 @@ class CartView(mixins.ListModelMixin, viewsets.GenericViewSet):
                 )
                 order_items.append(order_item)
             OrderItem.objects.bulk_create(order_items)
-            
+
             # Очищуємо кошик
             cart_items.delete()
-            
+
             return Response({"detail": "Order placed successfully.", "order_id": order.id},
                             status=status.HTTP_201_CREATED)
-        
+
         except Cart.DoesNotExist:
             return Response({"detail": "Cart not found."}, status=status.HTTP_404_NOT_FOUND)
-        
-    
+
+
 class CategoryView(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [TokenAuthentication]
