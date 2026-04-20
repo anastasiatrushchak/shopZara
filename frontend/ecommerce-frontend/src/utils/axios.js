@@ -1,7 +1,7 @@
 // utils/axios.js
 import axios from 'axios';
 
-const baseURL = 'http://localhost:8000/api';
+const baseURL = 'https://shopzara.onrender.com/api';
 
 const axiosInstance = axios.create({
   baseURL,
