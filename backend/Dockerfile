@@ -34,3 +34,6 @@ ENV PATH="/py/bin:$PATH"
 
 # Use the non-root user for running the app
 USER django-user
+
+
+CMD ["sh", "-c", "python manage.py migrate && gunicorn app.wsgi:application --bind 0.0.0.0:$PORT"]
