@@ -9,3 +9,4 @@ pytest-cov
 locust
 selenium
 webdriver-manager
+gunicorn
