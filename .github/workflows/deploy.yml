@@ -13,13 +13,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image locally
-        # Додаємо 'cd назва_папки &&' перед збіркою
-        run: cd app && docker build -t shop-zara --build-arg DEV=true .
+        # Заходимо в папку backend і запускаємо білд
+        run: cd backend && docker build -t shop-zara --build-arg DEV=true .
 
       - name: Run Tests
-        # Додаємо 'cd назва_папки &&' перед тестами (оскільки код теж там)
-        run: cd app && docker run shop-zara sh -c "python manage.py test"
-
+        # Запускаємо тести у вже зібраному контейнері
+        run: docker run shop-zara sh -c "python manage.py test"
   deploy:
     name: Deploy to Render
     needs: build-and-test
