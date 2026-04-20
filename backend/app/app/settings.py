@@ -19,13 +19,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_ikb&q=52oap9iv0bd2b2t1g&jnv&yq^2%0-_rxloa2)r1#qmt'
+# Читаємо ключ з середовища, або використовуємо стандартний для локальної розробки
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-_ikb&q=52oap9iv0bd2b2t1g&jnv&yq^2%0-_rxloa2)r1#qmt')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Вимикаємо DEBUG на сервері для безпеки
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+# Дозволяємо доступ до сервера з будь-якої адреси (для навчального завдання це ОК)
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
