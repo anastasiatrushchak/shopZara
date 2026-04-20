@@ -1,0 +1,29 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image locally
+        # Заходимо в папку backend і запускаємо білд
+        run: cd backend && docker build -t shop-zara --build-arg DEV=true .
+
+      - name: Run Tests
+        # Запускаємо тести у вже зібраному контейнері
+        run: docker run shop-zara sh -c "python manage.py test"
+  deploy:
+    name: Deploy to Render
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    # Деплой відбувається ТІЛЬКИ якщо тести пройшли успішно
+    steps:
+      - name: Trigger Render Deployment
+        run: curl "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
